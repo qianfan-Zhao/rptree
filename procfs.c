@@ -110,3 +110,17 @@ void *procfs_alloc(pid_t pid, const char *name, size_t *ret_filesize)
 
 	return buf;
 }
+
+int procfs_get_cwd(pid_t pid, char *buf, size_t bufsz)
+{
+	char path[1024];
+	int ret;
+
+	snprintf(path, sizeof(path), "/proc/%d/cwd", pid);
+	ret = readlink(path, buf, bufsz - 1);
+	if (ret < 0)
+		return ret;
+
+	buf[ret] = '\0';
+	return 0;
+}

@@ -22,6 +22,7 @@ static bool option_noenv = false;
 struct process {
 	pid_t			pid;
 	pid_t			ppid;
+	char			cwd[1024];
 	char			*cmdline;
 	size_t			cmdline_len;
 	char			*environ;
@@ -179,9 +180,24 @@ static void show_process_environ(FILE *fp, struct process *p, int level)
 	}
 }
 
+static void show_process_cwd(FILE *fp, struct process *p, int level)
+{
+	struct process *parent = p->parent;
+
+	if (level == 0)
+		return;
+
+	if (parent && strcmp(p->cwd, parent->cwd)) {
+		show_process_level(fp, level, "|...$ ");
+		fprintf(fp, "%s\n", p->cwd);
+	}
+}
+
 static void show_process(FILE *fp, struct process *p, int level)
 {
 	const char *s;
+
+	show_process_cwd(fp, p, level);
 
 	show_process_level(fp, level, "|.... ");
 	show_process_timestamp(fp, p);
@@ -285,6 +301,7 @@ static void add_process(pid_t pid)
 	self->parent = parent; /* parent maybe NULL */
 	self->cmdline = procfs_alloc(pid, "cmdline", &self->cmdline_len);
 	self->environ = procfs_alloc(pid, "environ", &self->environ_len);
+	procfs_get_cwd(pid, self->cwd, sizeof(self->cwd));
 
 	if (parent) {
 		list_add_tail(&self->head, &parent->childs);
@@ -368,6 +385,7 @@ int main(int argc, char **argv)
 		procfs_alloc(root_process->pid, "cmdline", &root_process->cmdline_len);
 	root_process->environ =
 		procfs_alloc(root_process->pid, "environ", &root_process->environ_len);
+	procfs_get_cwd(root_process->pid, root_process->cwd, sizeof(root_process->cwd));
 
 	pid = fork();
 	switch (pid) {
