@@ -13,8 +13,11 @@
 #include <unistd.h>
 #include <sys/wait.h>
 #include <sys/ptrace.h>
+#include <getopt.h>
 #include "list_head.h"
 #include "rptree.h"
+
+static bool option_noenv = false;
 
 struct process {
 	pid_t			pid;
@@ -193,7 +196,8 @@ static void show_process(FILE *fp, struct process *p, int level)
 	}
 	fprintf(fp, "\n");
 
-	show_process_environ(fp, p, level);
+	if (!option_noenv)
+		show_process_environ(fp, p, level);
 }
 
 static void show_process_tree(FILE *fp, struct process *root, int level)
@@ -290,6 +294,30 @@ static void add_process(pid_t pid)
 	}
 }
 
+enum {
+	ARG_NOENV = 1,
+	ARG_VERSION,
+
+	ARG_HELP = 'h',
+};
+
+static struct option long_options[] = {
+	/* name		has_arg,	*flag,	val */
+	{ "noenv",	no_argument,	NULL,	ARG_NOENV 	},
+	{ "version",	no_argument,	NULL,	ARG_VERSION	},
+	{ "help",	no_argument,	NULL,	ARG_HELP 	},
+	{ NULL,		0,		NULL,	0   		},
+};
+
+static void print_usage(void)
+{
+	fprintf(stderr, "rptree: show running process tree\n");
+	fprintf(stderr, "Usage: [OPTIONS] -- child [CHILD_ARGS]\n");
+	fprintf(stderr, "     --noenv:             do not show environ\n");
+	fprintf(stderr, "     --version:           show version\n");
+	fprintf(stderr, "  -h --help:              show this help message\n");
+}
+
 int main(int argc, char **argv)
 {
 	int main_argc, child_argc = argc;
@@ -301,6 +329,27 @@ int main(int argc, char **argv)
 		if (!strcmp(argv[main_argc], "--")) {
 			child_argc--; /* skip '--' */
 			argv[main_argc] = NULL;
+			break;
+		}
+	}
+
+	while (1) {
+		int option_index = 0;
+		int c;
+
+		c = getopt_long(main_argc, argv, "h", long_options, &option_index);
+		if (c == -1)
+			break;
+
+		switch (c) {
+		case 'h': /* help */
+			print_usage();
+			return 0;
+		case ARG_VERSION:
+			printf("%s\n", RPTREE_VERSION);
+			return 0;
+		case ARG_NOENV:
+			option_noenv = true;
 			break;
 		}
 	}
