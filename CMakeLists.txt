@@ -3,7 +3,7 @@ project(rptree C)
 
 set(CMAKE_INSTALL_PREFIX "/usr/local" CACHE PATH "Install path prefix")
 
-set(src rptree.c procfs.c)
+set(src rptree.c procfs.c cJSON.c)
 
 add_compile_options(-Wall)
 add_compile_options(-fstack-protector)
