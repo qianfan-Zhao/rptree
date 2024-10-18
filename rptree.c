@@ -10,12 +10,14 @@
 #include <time.h>
 #include <unistd.h>
 #include <sys/types.h>
+#include <fcntl.h>
 #include <unistd.h>
 #include <sys/wait.h>
 #include <sys/ptrace.h>
 #include <getopt.h>
 #include "list_head.h"
 #include "rptree.h"
+#include "cJSON.h"
 
 static bool option_noenv = false;
 
@@ -231,6 +233,49 @@ static void show_rptree(void)
 	return show_process_tree(stdout, root_process, 0);
 }
 
+static cJSON *process_to_json_object(struct process *root)
+{
+	cJSON *json = cJSON_CreateObject();
+	cJSON *cmd, *env;
+	const char *s;
+
+	if (!json)
+		return json;
+
+	cJSON_AddNumberToObject(json, "pid", root->pid);
+	cJSON_AddNumberToObject(json, "ppid", root->ppid);
+	cJSON_AddNumberToObject(json, "boot.sec", root->boottime.tv_sec);
+	cJSON_AddNumberToObject(json, "boot.nsec", root->boottime.tv_nsec);
+	cJSON_AddStringToObject(json, "cwd", root->cwd);
+
+	cmd = cJSON_AddArrayToObject(json, "cmdline");
+	foreach_string(s, root->cmdline, root->cmdline_len)
+		cJSON_AddItemToArray(cmd, cJSON_CreateString(s));
+
+	env = cJSON_AddArrayToObject(json, "environ");
+	foreach_string(s, root->environ, root->environ_len)
+		cJSON_AddItemToArray(env, cJSON_CreateString(s));
+
+	return json;
+}
+
+static int process_tree_addto_json(cJSON *json_arrays, struct process *root)
+{
+	cJSON *json;
+
+	json = process_to_json_object(root);
+	if (!list_empty(&root->childs)) {
+		cJSON *childs = cJSON_AddArrayToObject(json, "childs");
+		struct process *p;
+
+		list_for_each_entry(p, &root->childs, head, struct process)
+			process_tree_addto_json(childs, p);
+	}
+
+	cJSON_AddItemToArray(json_arrays, json);
+	return 0;
+}
+
 static void orphan_find_parent(void)
 {
 	struct process *orphan, *next, *parent;
@@ -311,19 +356,60 @@ static void add_process(pid_t pid)
 	}
 }
 
+static cJSON *rptree_to_json(void)
+{
+	cJSON *arrays = cJSON_CreateArray();
+
+	if (!arrays)
+		return arrays;
+
+	process_tree_addto_json(arrays, root_process);
+	return arrays;
+}
+
+static int rptree_write_to_json(const char *name)
+{
+	int fd = open(name, O_RDWR | O_CREAT | O_TRUNC, 0664);
+	char *s = NULL;
+	cJSON *json;
+
+	if (fd < 0) {
+		fprintf(stderr, "Error: create %s failed\n", name);
+		return fd;
+	}
+
+	json = rptree_to_json();
+	if (!json) {
+		fprintf(stderr, "Error: convert rptree to json failed\n");
+		close(fd);
+		return -1;
+	}
+
+	s = cJSON_Print(json);
+	write(fd, s, strlen(s));
+	close(fd);
+
+	cJSON_free(s);
+	cJSON_Delete(json);
+
+	return 0;
+}
+
 enum {
 	ARG_NOENV = 1,
 	ARG_VERSION,
 
 	ARG_HELP = 'h',
+	ARG_WRITE = 'w',
 };
 
 static struct option long_options[] = {
-	/* name		has_arg,	*flag,	val */
-	{ "noenv",	no_argument,	NULL,	ARG_NOENV 	},
-	{ "version",	no_argument,	NULL,	ARG_VERSION	},
-	{ "help",	no_argument,	NULL,	ARG_HELP 	},
-	{ NULL,		0,		NULL,	0   		},
+	/* name		has_arg,		*flag,	val */
+	{ "write",	required_argument,	NULL,	ARG_WRITE	},
+	{ "noenv",	no_argument,		NULL,	ARG_NOENV 	},
+	{ "version",	no_argument,		NULL,	ARG_VERSION	},
+	{ "help",	no_argument,		NULL,	ARG_HELP 	},
+	{ NULL,		0,			NULL,	0   		},
 };
 
 static void print_usage(void)
@@ -337,6 +423,7 @@ static void print_usage(void)
 
 int main(int argc, char **argv)
 {
+	const char *write_json_name = NULL;
 	int main_argc, child_argc = argc;
 	int wstatus = 0;
 	pid_t pid;
@@ -354,7 +441,7 @@ int main(int argc, char **argv)
 		int option_index = 0;
 		int c;
 
-		c = getopt_long(main_argc, argv, "h", long_options, &option_index);
+		c = getopt_long(main_argc, argv, "hw:", long_options, &option_index);
 		if (c == -1)
 			break;
 
@@ -362,6 +449,9 @@ int main(int argc, char **argv)
 		case 'h': /* help */
 			print_usage();
 			return 0;
+		case ARG_WRITE:
+			write_json_name = optarg;
+			break;
 		case ARG_VERSION:
 			printf("%s\n", RPTREE_VERSION);
 			return 0;
@@ -428,6 +518,9 @@ int main(int argc, char **argv)
 	orphan_find_parent();
 	show_rptree();
 	warning_orphan();
+
+	if (write_json_name)
+		rptree_write_to_json(write_json_name);
 
 	return WEXITSTATUS(wstatus);
 }
