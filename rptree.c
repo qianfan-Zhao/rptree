@@ -259,6 +259,76 @@ static cJSON *process_to_json_object(struct process *root)
 	return json;
 }
 
+static double cJSON_GetNumberValueIn(cJSON *root, const char *name)
+{
+	cJSON *obj = cJSON_GetObjectItem(root, name);
+
+	return cJSON_GetNumberValue(obj);
+}
+
+static const char *cJSON_GetStringValueIn(cJSON *root, const char *name)
+{
+	cJSON *obj = cJSON_GetObjectItem(root, name);
+
+	return cJSON_GetStringValue(obj);
+}
+
+static size_t cJSON_StringArrayTotalLength(cJSON *arrays)
+{
+	size_t total = 0;
+	cJSON *json;
+
+	cJSON_ArrayForEach(json, arrays)
+		total += strlen(cJSON_GetStringValue(json)) + 1; /* include null */
+
+	return total;
+}
+
+static char *cJSON_StringArrayPrint(cJSON *arrays, size_t *total_length)
+{
+	size_t i = 0, len = cJSON_StringArrayTotalLength(arrays);
+	char *s = calloc(1, len);
+	cJSON *json;
+
+	if (!s)
+		return s;
+
+	cJSON_ArrayForEach(json, arrays) {
+		const char *v = cJSON_GetStringValue(json);
+		size_t l = strlen(v) + 1; /* including null */
+
+		memcpy(s + i, v, l);
+		i += l;
+	}
+
+	*total_length = len;
+	return s;
+}
+
+static struct process *process_from_json(cJSON *json, struct process *parent)
+{
+	struct process *p = alloc_process();
+
+	if (!p)
+		return p;
+
+	p->pid = (pid_t)cJSON_GetNumberValueIn(json, "pid");
+	p->ppid = (pid_t)cJSON_GetNumberValueIn(json, "ppid");
+	p->boottime.tv_sec = (time_t)cJSON_GetNumberValueIn(json, "boot.sec");
+	p->boottime.tv_nsec = (long)cJSON_GetNumberValueIn(json, "boot.nsec");
+	snprintf(p->cwd, sizeof(p->cwd), "%s", cJSON_GetStringValueIn(json, "cwd"));
+
+	p->cmdline = cJSON_StringArrayPrint(
+			cJSON_GetObjectItem(json, "cmdline"), &p->cmdline_len);
+	p->environ = cJSON_StringArrayPrint(
+			cJSON_GetObjectItem(json, "environ"), &p->environ_len);
+
+	if (parent)
+		list_add_tail(&p->head, &parent->childs);
+
+	return p;
+}
+
 static int process_tree_addto_json(cJSON *json_arrays, struct process *root)
 {
 	cJSON *json;
@@ -395,6 +465,66 @@ static int rptree_write_to_json(const char *name)
 	return 0;
 }
 
+static int rptree_load_from_json(cJSON *root, struct process *parent)
+{
+	int ret = 0;
+	cJSON *json;
+
+	cJSON_ArrayForEach(json, root) {
+		struct process *p = process_from_json(json, parent);
+		cJSON *childs;
+
+		if (!p)
+			return -1;
+
+		/* the first process will be root_process */
+		if (!root_process)
+			root_process = p;
+
+		childs = cJSON_GetObjectItem(json, "childs");
+		if (childs) {
+			ret = rptree_load_from_json(childs, p);
+			if (ret < 0)
+				return ret;
+		}
+	}
+
+	return 0;
+}
+
+static int rptree_load_from(const char *name)
+{
+	int ret, fd = open(name, O_RDONLY);
+	cJSON *json;
+	size_t size;
+	char *s;
+
+	if (fd < 0) {
+		fprintf(stderr, "Error: open %s failed\n", name);
+		return fd;
+	}
+
+	s = file_alloc(fd, &size);
+	close(fd);
+
+	if (!s) {
+		fprintf(stderr, "Error: alloc read %s failed\n", name);
+		return -1;
+	}
+
+	json = cJSON_ParseWithLength(s, size);
+	free(s);
+	if (!json) {
+		fprintf(stderr, "Error: parse json failed\n");
+		return -1;
+	}
+
+	ret = rptree_load_from_json(json, root_process);
+	cJSON_Delete(json);
+
+	return ret;
+}
+
 enum {
 	ARG_NOENV = 1,
 	ARG_VERSION,
@@ -459,6 +589,18 @@ int main(int argc, char **argv)
 			option_noenv = true;
 			break;
 		}
+	}
+
+	if (optind < main_argc) {
+		const char *filename = argv[optind];
+		int ret;
+
+		ret = rptree_load_from(filename);
+		if (ret < 0)
+			return ret;
+
+		show_rptree();
+		return 0;
 	}
 
 	if (child_argc == 0) {

@@ -30,6 +30,7 @@ do {									\
 } while (/* CONSTCOND */ 0)
 
 pid_t procfs_get_ppid(pid_t pid);
+void *file_alloc(int fd, size_t *ret_filesize);
 int procfs_read(pid_t pid, const char *name, char *buf, size_t bufsz);
 void *procfs_alloc(pid_t pid, const char *name, size_t *ret_filesize);
 int procfs_get_cwd(pid_t pid, char *buf, size_t bufsz);

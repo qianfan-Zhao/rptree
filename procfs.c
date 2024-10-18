@@ -77,11 +77,21 @@ pid_t procfs_get_ppid(pid_t pid)
 void *procfs_alloc(pid_t pid, const char *name, size_t *ret_filesize)
 {
 	int fd = procfs_open(pid, name);
-	size_t filesz = 0, bufsz = 128;
-	uint8_t *buf = NULL;
+	void *buf = NULL;
 
 	if (fd < 0)
 		return buf;
+
+	buf = file_alloc(fd, ret_filesize);
+	close(fd);
+
+	return buf;
+}
+
+void *file_alloc(int fd, size_t *ret_filesize)
+{
+	size_t filesz = 0, bufsz = 128;
+	uint8_t *buf = NULL;
 
 	while (1) {
 		size_t freesz = bufsz - filesz - 1; /* reserved for space */
