@@ -551,6 +551,32 @@ static void print_usage(void)
 	fprintf(stderr, "  -h --help:              show this help message\n");
 }
 
+static int propagate_signal(int wstatus)
+{
+	int sig = 0;
+
+	if (WIFSTOPPED(wstatus)) {
+		#define case_stopsig(_sig) case _sig: sig = _sig; break
+
+		switch (WSTOPSIG(wstatus)) {
+		case_stopsig(SIGTERM);
+		case_stopsig(SIGINT);
+		case_stopsig(SIGQUIT);
+		case_stopsig(SIGHUP);
+		case_stopsig(SIGPIPE);
+		case_stopsig(SIGCHLD);
+		default:
+			if (WSTOPSIG(wstatus) != SIGTRAP)
+				sig = WSTOPSIG(wstatus);
+			break;
+		}
+
+		#undef case_stopsig
+	}
+
+	return sig;
+}
+
 int main(int argc, char **argv)
 {
 	const char *write_json_name = NULL;
@@ -640,19 +666,30 @@ int main(int argc, char **argv)
 	 */
 	ptrace(PTRACE_SETOPTIONS, pid, NULL,
 		PTRACE_O_TRACEEXEC |
+		PTRACE_O_EXITKILL |
 		PTRACE_O_TRACEFORK | PTRACE_O_TRACECLONE);
 	ptrace(PTRACE_CONT, pid, NULL, 0 /* signal */);
 
 	while((pid = wait(&wstatus)) > 0) {
+		int sig = propagate_signal(wstatus);
+
 		if(WIFSTOPPED(wstatus) && WSTOPSIG(wstatus) == SIGTRAP) {
 			switch (wstatus >> 8) {
 			case SIGTRAP | (PTRACE_EVENT_EXEC << 8):
+				sig = 0;
 				add_process(pid);
+				break;
+			case SIGTRAP | (PTRACE_EVENT_FORK << 8):
+			case SIGTRAP | (PTRACE_EVENT_CLONE << 8):
+				sig = 0;
+				break;
+			default:
+				sig = SIGTRAP;
 				break;
 			}
 		}
 
-		ptrace(PTRACE_CONT, pid, NULL, 0 /* signal */);
+		ptrace(PTRACE_CONT, pid, NULL, sig /* signal */);
 	}
 
 	printf("\n");
