@@ -19,26 +19,13 @@
 #include "rptree.h"
 #include "cJSON.h"
 
-static bool option_noenv = false;
-
-struct process {
-	pid_t			pid;
-	pid_t			ppid;
-	char			cwd[1024];
-	char			*cmdline;
-	size_t			cmdline_len;
-	char			*environ;
-	size_t			environ_len;
-
-	struct timespec		boottime;
-
-	struct list_head	head;
-	struct list_head	childs;
-	struct process		*parent;
-};
-
 static LIST_HEAD(orphan_lists);
 static struct process *root_process = NULL;
+
+struct process *get_root_process(void)
+{
+	return root_process;
+}
 
 static struct process *alloc_process(void)
 {
@@ -71,12 +58,12 @@ static struct process *process_find_in(struct process *root, pid_t pid)
 	return NULL;
 }
 
-static struct process *process_find(pid_t pid)
+struct process *process_find(pid_t pid)
 {
 	return process_find_in(root_process, pid);
 }
 
-static const char *next_string(const char *buf, size_t bufsz, const char *s)
+const char *next_string(const char *buf, size_t bufsz, const char *s)
 {
 	if (s == NULL)
 		return buf;
@@ -92,8 +79,16 @@ static const char *next_string(const char *buf, size_t bufsz, const char *s)
 	return NULL;
 }
 
-#define foreach_string(i, buf, bufsz) \
-	for (i = NULL; (i = next_string(buf, bufsz, i)) != NULL; )
+size_t count_string(const char *buf, size_t bufsz)
+{
+	const char *s;
+	size_t n = 0;
+
+	foreach_string(s, buf, bufsz)
+		++n;
+
+	return n;
+}
 
 static void show_process_level(FILE *fp, int level, const char *marker)
 {
@@ -110,7 +105,7 @@ static void show_process_timestamp(FILE *fp, struct process *p)
 	fprintf(fp, "%ld.%03ld ", diff.tv_sec, diff.tv_nsec / 1000000);
 }
 
-static bool process_has_env(struct process *p, const char *env)
+bool process_has_env(struct process *p, const char *env)
 {
 	const char *s;
 
@@ -195,7 +190,8 @@ static void show_process_cwd(FILE *fp, struct process *p, int level)
 	}
 }
 
-static void show_process(FILE *fp, struct process *p, int level)
+static void show_process(FILE *fp, struct process *p, int level,
+			 struct show_rptree_option *opt)
 {
 	const char *s;
 
@@ -214,23 +210,24 @@ static void show_process(FILE *fp, struct process *p, int level)
 	}
 	fprintf(fp, "\n");
 
-	if (!option_noenv)
+	if (!opt->noenv)
 		show_process_environ(fp, p, level);
 }
 
-static void show_process_tree(FILE *fp, struct process *root, int level)
+static void show_process_tree(FILE *fp, struct process *root, int level,
+			      struct show_rptree_option *opt)
 {
 	struct process *p;
 
-	show_process(fp, root, level);
+	show_process(fp, root, level, opt);
 
 	list_for_each_entry(p, &root->childs, head, struct process)
-		show_process_tree(fp, p, level + 1);
+		show_process_tree(fp, p, level + 1, opt);
 }
 
-static void show_rptree(void)
+void show_rptree(struct show_rptree_option *opt)
 {
-	return show_process_tree(stdout, root_process, 0);
+	return show_process_tree(stdout, root_process, 0, opt);
 }
 
 static cJSON *process_to_json_object(struct process *root)
@@ -323,8 +320,10 @@ static struct process *process_from_json(cJSON *json, struct process *parent)
 	p->environ = cJSON_StringArrayPrint(
 			cJSON_GetObjectItem(json, "environ"), &p->environ_len);
 
-	if (parent)
+	if (parent) {
+		p->parent = parent;
 		list_add_tail(&p->head, &parent->childs);
+	}
 
 	return p;
 }
@@ -529,6 +528,7 @@ enum {
 	ARG_NOENV = 1,
 	ARG_VERSION,
 
+	ARG_CMD = 'c',
 	ARG_HELP = 'h',
 	ARG_WRITE = 'w',
 };
@@ -548,6 +548,8 @@ static void print_usage(void)
 	fprintf(stderr, "Usage: [OPTIONS] -- child [CHILD_ARGS]\n");
 	fprintf(stderr, "     --noenv:             do not show environ\n");
 	fprintf(stderr, "     --version:           show version\n");
+	fprintf(stderr, "  -w --write file:        write process's information to file\n");
+	fprintf(stderr, "  -c command:             run builtin command\n");
 	fprintf(stderr, "  -h --help:              show this help message\n");
 }
 
@@ -579,8 +581,10 @@ static int propagate_signal(int wstatus)
 
 int main(int argc, char **argv)
 {
+	struct show_rptree_option opt = { .noenv = false };
 	const char *write_json_name = NULL;
 	int main_argc, child_argc = argc;
+	char *rpshell_command = NULL;
 	int wstatus = 0;
 	pid_t pid;
 
@@ -597,7 +601,7 @@ int main(int argc, char **argv)
 		int option_index = 0;
 		int c;
 
-		c = getopt_long(main_argc, argv, "hw:", long_options, &option_index);
+		c = getopt_long(main_argc, argv, "hc:w:", long_options, &option_index);
 		if (c == -1)
 			break;
 
@@ -605,6 +609,9 @@ int main(int argc, char **argv)
 		case 'h': /* help */
 			print_usage();
 			return 0;
+		case ARG_CMD:
+			rpshell_command = optarg;
+			break;
 		case ARG_WRITE:
 			write_json_name = optarg;
 			break;
@@ -612,7 +619,7 @@ int main(int argc, char **argv)
 			printf("%s\n", RPTREE_VERSION);
 			return 0;
 		case ARG_NOENV:
-			option_noenv = true;
+			opt.noenv = true;
 			break;
 		}
 	}
@@ -625,8 +632,7 @@ int main(int argc, char **argv)
 		if (ret < 0)
 			return ret;
 
-		show_rptree();
-		return 0;
+		return rpshell(rpshell_command);
 	}
 
 	if (child_argc == 0) {
@@ -695,7 +701,7 @@ int main(int argc, char **argv)
 	printf("\n");
 	printf("Running process tree generated by rptree %s\n", RPTREE_VERSION);
 	orphan_find_parent();
-	show_rptree();
+	show_rptree(&opt);
 	warning_orphan();
 
 	if (write_json_name)

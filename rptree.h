@@ -8,6 +8,40 @@
 
 #include <stdio.h>
 #include <unistd.h>
+#include <time.h>
+#include <stdbool.h>
+#include "list_head.h"
+
+struct process {
+	pid_t			pid;
+	pid_t			ppid;
+	char			cwd[1024];
+	char			*cmdline;
+	size_t			cmdline_len;
+	char			*environ;
+	size_t			environ_len;
+
+	struct timespec		boottime;
+
+	struct list_head	head;
+	struct list_head	childs;
+	struct process		*parent;
+};
+
+struct process *get_root_process(void);
+struct process *process_find(pid_t pid);
+bool process_has_env(struct process *, const char *);
+const char *next_string(const char *buf, size_t bufsz, const char *s);
+#define foreach_string(i, buf, bufsz) \
+	for (i = NULL; (i = next_string(buf, bufsz, i)) != NULL; )
+size_t count_string(const char *buf, size_t bufsz);
+int rpshell(char *rpshell_command);
+
+struct show_rptree_option {
+	bool			noenv;
+};
+
+void show_rptree(struct show_rptree_option *opt);
 
 #define timespecadd(tsp, usp, vsp)					\
 do {									\
