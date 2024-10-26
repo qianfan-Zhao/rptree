@@ -20,6 +20,9 @@
 #include "rptree.h"
 #include "cJSON.h"
 
+static int option_smart_pipe = 0;
+static int option_error_bad_pipe = 0;
+
 static LIST_HEAD(orphan_lists);
 static struct process *root_process = NULL;
 
@@ -191,7 +194,7 @@ static void show_process_cwd(FILE *fp, struct process *p, int level)
 	}
 }
 
-static void show_process_pipe(FILE *fp, struct process *p, int level)
+static void show_process_pipefd(FILE *fp, struct process *p, int level)
 {
 	if (p->pipe_fd0 > 0) {
 		show_process_level(fp, level, "|...0 ");
@@ -207,6 +210,7 @@ static void show_process_pipe(FILE *fp, struct process *p, int level)
 static void show_process(FILE *fp, struct process *p, int level,
 			 struct show_rptree_option *opt)
 {
+	struct process *pipe;
 	const char *s;
 
 	if (opt->show_cwd)
@@ -221,13 +225,24 @@ static void show_process(FILE *fp, struct process *p, int level,
 			fprintf(fp, " '%s'", s);
 		else
 			fprintf(fp, " %s", s);
-
 	}
+
+	for (pipe = p->pipe_next; pipe; pipe = pipe->pipe_next) {
+		const char *s;
+
+		fprintf(fp, " |");
+		foreach_string(s, pipe->cmdline, pipe->cmdline_len) {
+			if (strchr(s, ' '))
+				fprintf(fp, " '%s'", s);
+			else
+				fprintf(fp, " %s", s);
+		}
+	}
+
 	fprintf(fp, "\n");
 
-
-	if (opt->show_pipefd)
-		show_process_pipe(fp, p, level);
+	if (!option_smart_pipe && opt->show_pipefd)
+		show_process_pipefd(fp, p, level);
 
 	if (opt->show_env)
 		show_process_environ(fp, p, level);
@@ -563,11 +578,113 @@ static int rptree_load_from(const char *name)
 	return ret;
 }
 
+/*
+ * |.... 0.002 [465] /usr/bin/echo 'hello world'
+ *    |...0 /dev/pts/3
+ *    |...1 pipe:[2343]
+ *    |.... 0.002 [466] tr ' ' :
+ *    |...0 pipe:[2343]
+ *    |...1 pipe:[2344]
+ *    |.... 0.002 [467] awk -F: '{print $2}'
+ *    |...0 pipe:[2344]
+ *    |...1 /dev/pts/3
+ */
+static int process_compare_pipe(struct process *p, int pipe, int whichfd)
+{
+	if (pipe < 0)
+		return -1;
+
+	if (whichfd == 0)
+		return p->pipe_fd0 - pipe;
+
+	return p->pipe_fd1 - pipe;
+}
+
+static struct process *process_find_pipe_target(struct process *root,
+						int pipe, int whichfd)
+{
+	struct process *p;
+
+	if (pipe <= 0)
+		return NULL;
+
+	list_for_each_entry(p, &root->childs, head, struct process) {
+		if (!process_compare_pipe(p, pipe, whichfd))
+			return p;
+
+		for (struct process *pipe_list = p->pipe_next;
+		     pipe_list;
+		     pipe_list = pipe_list->pipe_next) {
+			if (!process_compare_pipe(pipe_list, pipe, whichfd))
+				return pipe_list;
+		}
+	}
+
+	return NULL;
+}
+
+static int process_smart_pipe(struct process *root)
+{
+	struct process *p, *next;
+
+	list_for_each_entry_safe(p, next, &root->childs, head, struct process) {
+		struct process *pipe_parent;
+
+		if (!list_empty(&p->childs)) {
+			int ret = process_smart_pipe(p);
+
+			if (ret < 0)
+				return ret;
+		}
+
+		if (p->pipe_fd0 > 0) {
+			/* this is a child in pipe,
+			 * find it's parent's out pipe and link it */
+			pipe_parent =
+				process_find_pipe_target(root, p->pipe_fd0, 1);
+
+			if (pipe_parent) {
+				if (pipe_parent->pipe_next) {
+					fprintf(stderr,
+						"smart process %d's pipe failed"
+						", it's parent %d's target not"
+						" empty\n",
+						p->pid, pipe_parent->pid);
+					return -1;
+				}
+
+				list_del(&p->head);
+				list_init(&p->head);
+
+				pipe_parent->pipe_next = p;
+			} else {
+				fprintf(stderr,
+					"Warrning: smart process %d's pipe "
+					"failed, it's pipe parent is not "
+					"found\n",
+					p->pid);
+
+				if (option_error_bad_pipe)
+					return -1;
+			}
+		}
+	}
+
+	return 0;
+}
+
+static int rptree_smart_pipe(void)
+{
+	return process_smart_pipe(root_process);
+}
+
 enum {
 	ARG_SHOW_ENV = 1,
 	ARG_SHOW_PIPEFD,
 	ARG_SHOW_CWD,
 	ARG_VERSION,
+	ARG_SMART_PIPE,
+	ARG_WARNNING_BAD_PIPE,
 
 	ARG_CMD = 'c',
 	ARG_HELP = 'h',
@@ -580,6 +697,8 @@ static struct option long_options[] = {
 	{ "env",	no_argument,		NULL,	ARG_SHOW_ENV 	},
 	{ "pipefd",	no_argument,		NULL,	ARG_SHOW_PIPEFD	},
 	{ "cwd",	no_argument,		NULL,	ARG_SHOW_CWD	},
+	{ "smart-pipe",	no_argument,		NULL,	ARG_SMART_PIPE	},
+	{ "Wbad-pipe",	no_argument,		NULL,	ARG_WARNNING_BAD_PIPE},
 	{ "version",	no_argument,		NULL,	ARG_VERSION	},
 	{ "help",	no_argument,		NULL,	ARG_HELP 	},
 	{ NULL,		0,			NULL,	0   		},
@@ -594,6 +713,8 @@ static void print_usage(void)
 	fprintf(stderr, "     --cwd:               show cwd\n");
 	fprintf(stderr, "     --version:           show version\n");
 	fprintf(stderr, "  -w --write file:        write process's information to file\n");
+	fprintf(stderr, "     --smart-pipe:        smart handle pipe process\n");
+	fprintf(stderr, "     --Wbad-pipe:         warnning orphan pipe but do not exit\n");
 	fprintf(stderr, "  -c command:             run builtin command\n");
 	fprintf(stderr, "  -h --help:              show this help message\n");
 }
@@ -672,6 +793,12 @@ int main(int argc, char **argv)
 		case ARG_SHOW_CWD:
 			opt.show_cwd = true;
 			break;
+		case ARG_SMART_PIPE:
+			option_smart_pipe = 1;
+			break;
+		case ARG_WARNNING_BAD_PIPE:
+			option_error_bad_pipe = 0;
+			break;
 		}
 	}
 
@@ -682,6 +809,12 @@ int main(int argc, char **argv)
 		ret = rptree_load_from(filename);
 		if (ret < 0)
 			return ret;
+
+		if (option_smart_pipe) {
+			ret = rptree_smart_pipe();
+			if (ret < 0)
+				return ret;
+		}
 
 		return rpshell(rpshell_command);
 	}
@@ -755,6 +888,9 @@ int main(int argc, char **argv)
 	if (write_json_name) {
 		rptree_write_to_json(write_json_name);
 	} else {
+		if (option_smart_pipe && rptree_smart_pipe() < 0)
+			return -1;
+
 		printf("\n");
 		printf("Running process tree generated by rptree %s\n", RPTREE_VERSION);
 		show_rptree(&opt);

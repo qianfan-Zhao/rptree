@@ -28,6 +28,8 @@ struct process {
 	struct list_head	head;
 	struct list_head	childs;
 	struct process		*parent;
+
+	struct process		*pipe_next;
 };
 
 struct process *get_root_process(void);
