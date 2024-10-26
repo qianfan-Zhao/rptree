@@ -134,3 +134,48 @@ int procfs_get_cwd(pid_t pid, char *buf, size_t bufsz)
 	buf[ret] = '\0';
 	return 0;
 }
+
+int procfs_get_fdname(pid_t pid, int fd, char *buf, size_t bufsz)
+{
+	char path[1024];
+	int ret;
+
+	snprintf(path, sizeof(path), "/proc/%d/fd/%d", pid, fd);
+	ret = readlink(path, buf, bufsz - 1);
+	if (ret < 0)
+		return ret;
+
+	buf[ret] = '\0';
+	return 0;
+}
+
+/*
+ * |.... 0.002 [465] /usr/bin/echo 'hello world'
+ *    |...0 /dev/pts/3
+ *    |...1 pipe:[2343]
+ *    |.... 0.002 [466] tr ' ' :
+ *    |...0 pipe:[2343]
+ *    |...1 pipe:[2344]
+ *    |.... 0.002 [467] awk -F: '{print $2}'
+ *    |...0 pipe:[2344]
+ *    |...1 /dev/pts/3
+ */
+int procfs_get_pipefd(pid_t pid, int fd)
+{
+	char *endp, filename[1024];
+	long pipe;
+	int ret;
+
+	ret = procfs_get_fdname(pid, fd, filename, sizeof(filename));
+	if (ret < 0)
+		return fd;
+
+	if (strncmp(filename, "pipe:[", 6)) /* not a pipe */
+		return -1;
+
+	pipe = strtol(filename + 6, &endp, 10);
+	if (*endp != ']') /* bad pipe number */
+		return -1;
+
+	return (int)pipe;
+}

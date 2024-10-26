@@ -20,6 +20,8 @@ struct process {
 	size_t			cmdline_len;
 	char			*environ;
 	size_t			environ_len;
+	int			pipe_fd0;
+	int			pipe_fd1;
 
 	struct timespec		boottime;
 
@@ -38,7 +40,9 @@ size_t count_string(const char *buf, size_t bufsz);
 int rpshell(char *rpshell_command);
 
 struct show_rptree_option {
-	bool			noenv;
+	bool			show_env;
+	bool			show_pipefd;
+	bool			show_cwd;
 };
 
 void show_rptree(struct show_rptree_option *opt);
@@ -68,5 +72,7 @@ void *file_alloc(int fd, size_t *ret_filesize);
 int procfs_read(pid_t pid, const char *name, char *buf, size_t bufsz);
 void *procfs_alloc(pid_t pid, const char *name, size_t *ret_filesize);
 int procfs_get_cwd(pid_t pid, char *buf, size_t bufsz);
+int procfs_get_fdname(pid_t pid, int fd, char *buf, size_t bufsz);
+int procfs_get_pipefd(pid_t pid, int fd);
 
 #endif

@@ -7,6 +7,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdbool.h>
+#include <math.h>
 #include <time.h>
 #include <unistd.h>
 #include <sys/types.h>
@@ -190,12 +191,26 @@ static void show_process_cwd(FILE *fp, struct process *p, int level)
 	}
 }
 
+static void show_process_pipe(FILE *fp, struct process *p, int level)
+{
+	if (p->pipe_fd0 > 0) {
+		show_process_level(fp, level, "|...0 ");
+		fprintf(fp, "pipe:%d\n", p->pipe_fd0);
+	}
+
+	if (p->pipe_fd1 > 0) {
+		show_process_level(fp, level, "|...1 ");
+		fprintf(fp, "pipe:%d\n", p->pipe_fd1);
+	}
+}
+
 static void show_process(FILE *fp, struct process *p, int level,
 			 struct show_rptree_option *opt)
 {
 	const char *s;
 
-	show_process_cwd(fp, p, level);
+	if (opt->show_cwd)
+		show_process_cwd(fp, p, level);
 
 	show_process_level(fp, level, "|.... ");
 	show_process_timestamp(fp, p);
@@ -210,7 +225,11 @@ static void show_process(FILE *fp, struct process *p, int level,
 	}
 	fprintf(fp, "\n");
 
-	if (!opt->noenv)
+
+	if (opt->show_pipefd)
+		show_process_pipe(fp, p, level);
+
+	if (opt->show_env)
 		show_process_environ(fp, p, level);
 }
 
@@ -245,6 +264,9 @@ static cJSON *process_to_json_object(struct process *root)
 	cJSON_AddNumberToObject(json, "boot.nsec", root->boottime.tv_nsec);
 	cJSON_AddStringToObject(json, "cwd", root->cwd);
 
+	cJSON_AddNumberToObject(json, "pipe0", root->pipe_fd0);
+	cJSON_AddNumberToObject(json, "pipe1", root->pipe_fd1);
+
 	cmd = cJSON_AddArrayToObject(json, "cmdline");
 	foreach_string(s, root->cmdline, root->cmdline_len)
 		cJSON_AddItemToArray(cmd, cJSON_CreateString(s));
@@ -261,6 +283,17 @@ static double cJSON_GetNumberValueIn(cJSON *root, const char *name)
 	cJSON *obj = cJSON_GetObjectItem(root, name);
 
 	return cJSON_GetNumberValue(obj);
+}
+
+static double cJSON_GetNumberValueInOr(cJSON *root, const char *name,
+				       double default_value)
+{
+	double v = cJSON_GetNumberValueIn(root, name);
+
+	if (isnan(v))
+		return default_value;
+
+	return v;
 }
 
 static const char *cJSON_GetStringValueIn(cJSON *root, const char *name)
@@ -314,6 +347,10 @@ static struct process *process_from_json(cJSON *json, struct process *parent)
 	p->boottime.tv_sec = (time_t)cJSON_GetNumberValueIn(json, "boot.sec");
 	p->boottime.tv_nsec = (long)cJSON_GetNumberValueIn(json, "boot.nsec");
 	snprintf(p->cwd, sizeof(p->cwd), "%s", cJSON_GetStringValueIn(json, "cwd"));
+
+	/* the old version doesn't has "pipe" in json file */
+	p->pipe_fd0 = (int)cJSON_GetNumberValueInOr(json, "pipe0", -1);
+	p->pipe_fd1 = (int)cJSON_GetNumberValueInOr(json, "pipe1", -1);
 
 	p->cmdline = cJSON_StringArrayPrint(
 			cJSON_GetObjectItem(json, "cmdline"), &p->cmdline_len);
@@ -413,6 +450,8 @@ static void add_process(pid_t pid)
 	self->pid = pid;
 	self->ppid = ppid;
 	self->parent = parent; /* parent maybe NULL */
+	self->pipe_fd0 = procfs_get_pipefd(pid, 0);
+	self->pipe_fd1 = procfs_get_pipefd(pid, 1);
 	self->cmdline = procfs_alloc(pid, "cmdline", &self->cmdline_len);
 	self->environ = procfs_alloc(pid, "environ", &self->environ_len);
 	procfs_get_cwd(pid, self->cwd, sizeof(self->cwd));
@@ -525,7 +564,9 @@ static int rptree_load_from(const char *name)
 }
 
 enum {
-	ARG_NOENV = 1,
+	ARG_SHOW_ENV = 1,
+	ARG_SHOW_PIPEFD,
+	ARG_SHOW_CWD,
 	ARG_VERSION,
 
 	ARG_CMD = 'c',
@@ -536,7 +577,9 @@ enum {
 static struct option long_options[] = {
 	/* name		has_arg,		*flag,	val */
 	{ "write",	required_argument,	NULL,	ARG_WRITE	},
-	{ "noenv",	no_argument,		NULL,	ARG_NOENV 	},
+	{ "env",	no_argument,		NULL,	ARG_SHOW_ENV 	},
+	{ "pipefd",	no_argument,		NULL,	ARG_SHOW_PIPEFD	},
+	{ "cwd",	no_argument,		NULL,	ARG_SHOW_CWD	},
 	{ "version",	no_argument,		NULL,	ARG_VERSION	},
 	{ "help",	no_argument,		NULL,	ARG_HELP 	},
 	{ NULL,		0,			NULL,	0   		},
@@ -546,7 +589,9 @@ static void print_usage(void)
 {
 	fprintf(stderr, "rptree: show running process tree\n");
 	fprintf(stderr, "Usage: [OPTIONS] -- child [CHILD_ARGS]\n");
-	fprintf(stderr, "     --noenv:             do not show environ\n");
+	fprintf(stderr, "     --env:               show environ\n");
+	fprintf(stderr, "     --pipefd:            show pipe fd\n");
+	fprintf(stderr, "     --cwd:               show cwd\n");
 	fprintf(stderr, "     --version:           show version\n");
 	fprintf(stderr, "  -w --write file:        write process's information to file\n");
 	fprintf(stderr, "  -c command:             run builtin command\n");
@@ -581,7 +626,7 @@ static int propagate_signal(int wstatus)
 
 int main(int argc, char **argv)
 {
-	struct show_rptree_option opt = { .noenv = false };
+	struct show_rptree_option opt = { .show_env = false };
 	const char *write_json_name = NULL;
 	int main_argc, child_argc = argc;
 	char *rpshell_command = NULL;
@@ -618,8 +663,14 @@ int main(int argc, char **argv)
 		case ARG_VERSION:
 			printf("%s\n", RPTREE_VERSION);
 			return 0;
-		case ARG_NOENV:
-			opt.noenv = true;
+		case ARG_SHOW_ENV:
+			opt.show_env = true;
+			break;
+		case ARG_SHOW_PIPEFD:
+			opt.show_pipefd = true;
+			break;
+		case ARG_SHOW_CWD:
+			opt.show_cwd = true;
 			break;
 		}
 	}

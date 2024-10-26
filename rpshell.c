@@ -27,16 +27,24 @@ struct command {
 
 static const struct xopt_option cmd_rptree_options[] = {
 	{
-		.long_name	= "noenv",
+		.long_name	= "env",
 		.type		= XOPT_TYPE_BOOL,
-		.offset		= offsetof(struct show_rptree_option, noenv),
+		.offset		= offsetof(struct show_rptree_option, show_env),
+	}, {
+		.long_name	= "pipefd",
+		.type		= XOPT_TYPE_BOOL,
+		.offset		= offsetof(struct show_rptree_option, show_pipefd),
+	}, {
+		.long_name	= "cwd",
+		.type		= XOPT_TYPE_BOOL,
+		.offset		= offsetof(struct show_rptree_option, show_cwd),
 	},
 	LIBXOPT_NULLOPTION,
 };
 
 static int cmd_print(int argc, char **argv)
 {
-	struct show_rptree_option opt = { .noenv = false };
+	struct show_rptree_option opt = { .show_env = false };
 	struct xopt *xopt = libxopt_new(cmd_rptree_options, 0);
 	int ret;
 
