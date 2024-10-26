@@ -1,16 +1,21 @@
-#!/bin/sh
+#!/bin/bash
 
+enable -n echo
+
+export GLOBAL_ENV="env1"
 self_path=$(dirname "$(readlink -f "$0")")
 
-export SELF="$0"
-export GLOBAL_ENV="env1"
-
 function get_timestamp() {
-    date '+%Y-%m-%d %H:%M:%S'
+    date '+%Y-%m-%d %H:%M:%S' | tr ' ' 'T'
 }
 
-/usr/bin/echo "script running in $0"
-/usr/bin/echo "timestamp: " "$(get_timestamp)"
+function get_timestamp_zone() {
+    local ts=$(get_timestamp)
 
-sleep 5
+    echo "${ts}$(date '+%z')"
+}
+
+echo "script running in $0"
+echo "timestamp: " "$(get_timestamp)"
+echo "timestamp with zone: " "$(get_timestamp_zone)"
 sh ${self_path}/2.sh

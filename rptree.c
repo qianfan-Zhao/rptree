@@ -20,7 +20,7 @@
 #include "rptree.h"
 #include "cJSON.h"
 
-static int option_smart_pipe = 0;
+static int option_smart_pipe = 0, option_smart_fork = 0;
 static int option_error_bad_pipe = 0;
 
 static LIST_HEAD(orphan_lists);
@@ -678,6 +678,131 @@ static int rptree_smart_pipe(void)
 	return process_smart_pipe(root_process);
 }
 
+static size_t process_count_childs(struct process *root)
+{
+	struct process *p;
+	size_t count = 0;
+
+	list_for_each_entry(p, &root->childs, head, struct process)
+		++count;
+
+	return count;
+}
+
+static void process_replace_father(struct process *father, struct process *child)
+{
+	struct process *p, *next;
+
+	free(father->cmdline);
+	free(father->environ);
+
+	father->pid = child->pid;
+	father->ppid = child->ppid;
+	memcpy(father->cwd, child->cwd, sizeof(child->cwd));
+	father->cmdline = child->cmdline;
+	father->cmdline_len = child->cmdline_len;
+	father->environ = child->environ;
+	father->environ_len = child->environ_len;
+	father->pipe_fd0 = child->pipe_fd0;
+	father->pipe_fd1 = child->pipe_fd1;
+	father->boottime = child->boottime;
+	father->pipe_next = child->pipe_next;
+
+	list_init(&father->childs);
+	list_for_each_entry_safe(p, next, &child->childs, head, struct process) {
+		list_del(&p->head);
+		list_init(&p->head);
+
+		list_add_tail(&p->head, &father->childs);
+	}
+}
+
+/*
+ * $ ./rptree --smart-pipe 1.json -c print
+ * 0.000 [502] ./rptree -w 1.json -- sh ../example/1.sh
+ * |.... 0.000 [503] sh ../example/1.sh                     # this is the grandpa arg passed to @process_smart_fork
+ *     |.... 0.001 [504] sh ../example/1.sh
+ *         |.... 0.001 [505] readlink -f ../example/1.sh
+ *     |.... 0.002 [504] dirname /home/qianfan/debug/port/github-os/rptree/example/1.sh
+ *     |.... 0.002 [506] echo 'script running in ../example/1.sh'
+ *     |.... 0.004 [507] sh ../example/1.sh
+ *         |.... 0.004 [508] date '+%Y-%m-%d %H:%M:%S' | tr ' ' T
+ *     |.... 0.005 [510] echo 'timestamp: ' 2024-10-28T08:14:11
+ *     |.... 0.005 [511] sh /home/qianfan/debug/port/github-os/rptree/example/2.sh
+ *         |.... 0.006 [512] echo 'script running in /home/qianfan/debug/port/github-os/rptree/example/2.sh, global env is: "env1"'
+ *
+ * After --smart-pipe and --smart-fork, the output should more nice.
+ * $ ./rptree --smart-pipe --smart-fork 1.json -c print
+ * 0.000 [502] ./rptree -w 1.json -- sh ../example/1.sh
+ * |.... 0.000 [503] sh ../example/1.sh
+ *     |.... 0.001 [505] readlink -f ../example/1.sh
+ *     |.... 0.002 [504] dirname /home/qianfan/debug/port/github-os/rptree/example/1.sh
+ *     |.... 0.002 [506] echo 'script running in ../example/1.sh'
+ *     |.... 0.004 [508] date '+%Y-%m-%d %H:%M:%S' | tr ' ' T
+ *     |.... 0.005 [510] echo 'timestamp: ' 2024-10-28T08:14:11
+ *     |.... 0.005 [511] sh /home/qianfan/debug/port/github-os/rptree/example/2.sh
+ *         |.... 0.006 [512] echo 'script running in /home/qianfan/debug/port/github-os/rptree/example/2.sh, global env is: "env1"'
+ */
+static int process_smart_fork(struct process *grandpa)
+{
+	struct process *father, *next;
+	int ret = 0;
+
+	list_for_each_entry_safe(father, next, &grandpa->childs, head, struct process) {
+		struct process *child;
+
+		if (process_count_childs(father) != 1)
+			goto skip;
+
+		if (father->cmdline_len != grandpa->cmdline_len ||
+		    memcmp(father->cmdline, grandpa->cmdline, father->cmdline_len))
+			goto skip;
+
+		child = list_first_entry(&father->childs, struct process, head);
+		if (!child)
+			goto skip;
+
+		list_del(&child->head);
+		list_init(&child->head);
+		process_replace_father(father, child);
+		free(child);
+
+	skip:
+		if (!list_empty(&father->childs)) {
+			ret = process_smart_fork(father);
+			if (ret < 0)
+				break;
+		}
+	}
+
+	return ret;
+}
+
+static int rptree_smart_fork(void)
+{
+	return process_smart_fork(root_process);
+}
+
+static int rptree_smart(void)
+{
+	int ret = 0;
+
+	/* we must handle pipe first and then fork */
+	if (option_smart_pipe) {
+		ret = rptree_smart_pipe();
+		if (ret < 0)
+			return ret;
+	}
+
+	if (option_smart_fork) {
+		ret = rptree_smart_fork();
+		if (ret < 0)
+			return ret;
+	}
+
+	return ret;
+}
+
 enum {
 	ARG_SHOW_ENV = 1,
 	ARG_SHOW_PIPEFD,
@@ -685,6 +810,7 @@ enum {
 	ARG_VERSION,
 	ARG_SMART_PIPE,
 	ARG_WARNNING_BAD_PIPE,
+	ARG_SMART_FORK,
 
 	ARG_CMD = 'c',
 	ARG_HELP = 'h',
@@ -699,6 +825,7 @@ static struct option long_options[] = {
 	{ "cwd",	no_argument,		NULL,	ARG_SHOW_CWD	},
 	{ "smart-pipe",	no_argument,		NULL,	ARG_SMART_PIPE	},
 	{ "Wbad-pipe",	no_argument,		NULL,	ARG_WARNNING_BAD_PIPE},
+	{ "smart-fork",	no_argument,		NULL,	ARG_SMART_FORK	},
 	{ "version",	no_argument,		NULL,	ARG_VERSION	},
 	{ "help",	no_argument,		NULL,	ARG_HELP 	},
 	{ NULL,		0,			NULL,	0   		},
@@ -715,6 +842,7 @@ static void print_usage(void)
 	fprintf(stderr, "  -w --write file:        write process's information to file\n");
 	fprintf(stderr, "     --smart-pipe:        smart handle pipe process\n");
 	fprintf(stderr, "     --Wbad-pipe:         warnning orphan pipe but do not exit\n");
+	fprintf(stderr, "     --smart-fork:        smart handle fork process\n");
 	fprintf(stderr, "  -c command:             run builtin command\n");
 	fprintf(stderr, "  -h --help:              show this help message\n");
 }
@@ -799,6 +927,9 @@ int main(int argc, char **argv)
 		case ARG_WARNNING_BAD_PIPE:
 			option_error_bad_pipe = 0;
 			break;
+		case ARG_SMART_FORK:
+			option_smart_fork = 1;
+			break;
 		}
 	}
 
@@ -810,11 +941,9 @@ int main(int argc, char **argv)
 		if (ret < 0)
 			return ret;
 
-		if (option_smart_pipe) {
-			ret = rptree_smart_pipe();
-			if (ret < 0)
-				return ret;
-		}
+		ret = rptree_smart();
+		if (ret < 0)
+			return ret;
 
 		return rpshell(rpshell_command);
 	}
@@ -888,8 +1017,10 @@ int main(int argc, char **argv)
 	if (write_json_name) {
 		rptree_write_to_json(write_json_name);
 	} else {
-		if (option_smart_pipe && rptree_smart_pipe() < 0)
-			return -1;
+		int ret = rptree_smart();
+
+		if (ret < 0)
+			return ret;
 
 		printf("\n");
 		printf("Running process tree generated by rptree %s\n", RPTREE_VERSION);

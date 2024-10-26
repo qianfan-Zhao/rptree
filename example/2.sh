@@ -1,6 +1,4 @@
-#!/bin/sh
+#!/bin/bash
+enable -n echo
 
-export SELF="$0"
-export GLOBAL_ENV="env2"
-
-/usr/bin/echo "script running in $0"
+echo "script running in $0, global env is: \"${GLOBAL_ENV}\""
