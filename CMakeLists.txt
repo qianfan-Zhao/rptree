@@ -63,3 +63,25 @@ endif()
 
 add_executable(rptree ${src})
 install(TARGETS rptree RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+
+# Add test functions
+enable_testing()
+
+function(add_rptree_shell_test TEST_NAME)
+        find_program(BASH_PROGRAM bash)
+        if (BASH_PROGRAM)
+                add_test(
+                        NAME ${TEST_NAME}
+                        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/tests/${TEST_NAME}
+                        COMMAND ${BASH_PROGRAM} ${CMAKE_CURRENT_SOURCE_DIR}/tests/test.sh ${TEST_NAME}
+                )
+
+                set_property(
+                        TEST ${TEST_NAME}
+                        PROPERTY ENVIRONMENT
+                                "CMAKE_CURRENT_BINARY_DIR=${CMAKE_CURRENT_BINARY_DIR}"
+                )
+        endif()
+endfunction()
+
+add_rptree_shell_test(smart)

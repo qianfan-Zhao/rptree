@@ -1,0 +1,15 @@
+--smart-pipe --smart-fork -c print
+[29908] ./rptree -w pipe.json -- sh ../example/1.sh
+|.... [29909] sh ../example/1.sh
+    |.... [29911] readlink -f ../example/1.sh
+    |.... [29910] dirname /home/qianfan/debug/port/github-os/rptree/example/1.sh
+    |.... [29912] echo 'script running in ../example/1.sh'
+    |.... [29914] date '+%Y-%m-%d %H:%M:%S' | tr ' ' T
+    |.... [29916] echo 'timestamp: ' 2024-10-28T17:07:31
+    |.... [29917] sh ../example/1.sh
+        |.... [29919] date '+%Y-%m-%d %H:%M:%S' | tr ' ' T
+        |.... [29921] date +%z
+        |.... [29922] echo 2024-10-28T17:07:31+0800
+    |.... [29923] echo 'timestamp with zone: ' 2024-10-28T17:07:31+0800
+    |.... [29924] sh /home/qianfan/debug/port/github-os/rptree/example/2.sh
+        |.... [29925] echo 'script running in /home/qianfan/debug/port/github-os/rptree/example/2.sh, global env is: "env1"'
