@@ -1,0 +1,262 @@
+[{
+		"pid":	30295,
+		"ppid":	0,
+		"boot.sec":	32363,
+		"boot.nsec":	294792000,
+		"cwd":	"",
+		"pipe0":	0,
+		"pipe1":	0,
+		"cmdline":	["./rptree", "-w", "fork_dep4.json", "--", "sh", "../example/1.sh"],
+		"environ":	[],
+		"childs":	[{
+				"pid":	30296,
+				"ppid":	30295,
+				"boot.sec":	32363,
+				"boot.nsec":	295261000,
+				"cwd":	"",
+				"pipe0":	-1,
+				"pipe1":	-1,
+				"cmdline":	["sh", "../example/1.sh"],
+				"environ":	[],
+				"childs":	[{
+						"pid":	30297,
+						"ppid":	30296,
+						"boot.sec":	32363,
+						"boot.nsec":	297112100,
+						"cwd":	"",
+						"pipe0":	-1,
+						"pipe1":	79158,
+						"cmdline":	["sh", "../example/1.sh"],
+						"environ":	[],
+						"childs":	[{
+								"pid":	30298,
+								"ppid":	30297,
+								"boot.sec":	32363,
+								"boot.nsec":	297226500,
+								"cwd":	"",
+								"pipe0":	-1,
+								"pipe1":	75221,
+								"cmdline":	["readlink", "-f", "../example/1.sh"],
+								"environ":	[]
+							}]
+					}, {
+						"pid":	30297,
+						"ppid":	30296,
+						"boot.sec":	32363,
+						"boot.nsec":	297864000,
+						"cwd":	"",
+						"pipe0":	-1,
+						"pipe1":	79158,
+						"cmdline":	["dirname", "/home/qianfan/debug/port/github-os/rptree/example/1.sh"],
+						"environ":	[]
+					}, {
+						"pid":	30299,
+						"ppid":	30296,
+						"boot.sec":	32363,
+						"boot.nsec":	298620000,
+						"cwd":	"",
+						"pipe0":	-1,
+						"pipe1":	-1,
+						"cmdline":	["echo", "script running in ../example/1.sh"],
+						"environ":	[]
+					}, {
+						"pid":	30300,
+						"ppid":	30296,
+						"boot.sec":	32363,
+						"boot.nsec":	300019200,
+						"cwd":	"",
+						"pipe0":	-1,
+						"pipe1":	79159,
+						"cmdline":	["sh", "../example/1.sh"],
+						"environ":	[],
+						"childs":	[{
+								"pid":	30301,
+								"ppid":	30300,
+								"boot.sec":	32363,
+								"boot.nsec":	300094000,
+								"cwd":	"",
+								"pipe0":	-1,
+								"pipe1":	78318,
+								"cmdline":	["date", "+%Y-%m-%d %H:%M:%S"],
+								"environ":	[]
+							}, {
+								"pid":	30302,
+								"ppid":	30300,
+								"boot.sec":	32363,
+								"boot.nsec":	300135500,
+								"cwd":	"",
+								"pipe0":	78318,
+								"pipe1":	79159,
+								"cmdline":	["tr", " ", "T"],
+								"environ":	[]
+							}]
+					}, {
+						"pid":	30303,
+						"ppid":	30296,
+						"boot.sec":	32363,
+						"boot.nsec":	301218700,
+						"cwd":	"",
+						"pipe0":	-1,
+						"pipe1":	-1,
+						"cmdline":	["echo", "timestamp: ", "2024-10-28T17:10:17"],
+						"environ":	[]
+					}, {
+						"pid":	30304,
+						"ppid":	30296,
+						"boot.sec":	32363,
+						"boot.nsec":	302862600,
+						"cwd":	"",
+						"pipe0":	-1,
+						"pipe1":	79160,
+						"cmdline":	["sh", "../example/1.sh"],
+						"environ":	[],
+						"childs":	[{
+								"pid":	30305,
+								"ppid":	30304,
+								"boot.sec":	32363,
+								"boot.nsec":	302881300,
+								"cwd":	"",
+								"pipe0":	-1,
+								"pipe1":	80231,
+								"cmdline":	["sh", "../example/1.sh"],
+								"environ":	[],
+								"childs":	[{
+										"pid":	30306,
+										"ppid":	30305,
+										"boot.sec":	32363,
+										"boot.nsec":	302979000,
+										"cwd":	"",
+										"pipe0":	-1,
+										"pipe1":	49841,
+										"cmdline":	["date", "+%Y-%m-%d %H:%M:%S"],
+										"environ":	[]
+									}, {
+										"pid":	30307,
+										"ppid":	30305,
+										"boot.sec":	32363,
+										"boot.nsec":	303395700,
+										"cwd":	"",
+										"pipe0":	49841,
+										"pipe1":	80231,
+										"cmdline":	["tr", " ", "T"],
+										"environ":	[]
+									}]
+							}, {
+								"pid":	30308,
+								"ppid":	30304,
+								"boot.sec":	32363,
+								"boot.nsec":	304391900,
+								"cwd":	"",
+								"pipe0":	-1,
+								"pipe1":	80232,
+								"cmdline":	["date", "+%z"],
+								"environ":	[]
+							}, {
+								"pid":	30309,
+								"ppid":	30304,
+								"boot.sec":	32363,
+								"boot.nsec":	305143400,
+								"cwd":	"",
+								"pipe0":	-1,
+								"pipe1":	79160,
+								"cmdline":	["echo", "2024-10-28T17:10:17+0800"],
+								"environ":	[]
+							}]
+					}, {
+						"pid":	30310,
+						"ppid":	30296,
+						"boot.sec":	32363,
+						"boot.nsec":	306012600,
+						"cwd":	"",
+						"pipe0":	-1,
+						"pipe1":	-1,
+						"cmdline":	["echo", "timestamp with zone: ", "2024-10-28T17:10:17+0800"],
+						"environ":	[]
+					}, {
+						"pid":	30311,
+						"ppid":	30296,
+						"boot.sec":	32363,
+						"boot.nsec":	307850300,
+						"cwd":	"",
+						"pipe0":	-1,
+						"pipe1":	79161,
+						"cmdline":	["sh", "../example/1.sh"],
+						"environ":	[],
+						"childs":	[{
+								"pid":	30312,
+								"ppid":	30311,
+								"boot.sec":	32363,
+								"boot.nsec":	307959800,
+								"cwd":	"",
+								"pipe0":	-1,
+								"pipe1":	79161,
+								"cmdline":	["sh", "../example/1.sh"],
+								"environ":	[],
+								"childs":	[{
+										"pid":	30313,
+										"ppid":	30312,
+										"boot.sec":	32363,
+										"boot.nsec":	308004100,
+										"cwd":	"",
+										"pipe0":	-1,
+										"pipe1":	79161,
+										"cmdline":	["sh", "../example/1.sh"],
+										"environ":	[],
+										"childs":	[{
+												"pid":	30314,
+												"ppid":	30313,
+												"boot.sec":	32363,
+												"boot.nsec":	308133200,
+												"cwd":	"",
+												"pipe0":	-1,
+												"pipe1":	79161,
+												"cmdline":	["sh", "../example/1.sh"],
+												"environ":	[],
+												"childs":	[{
+														"pid":	30315,
+														"ppid":	30314,
+														"boot.sec":	32363,
+														"boot.nsec":	308323000,
+														"cwd":	"",
+														"pipe0":	-1,
+														"pipe1":	79161,
+														"cmdline":	["echo", "abcd"],
+														"environ":	[]
+													}]
+											}]
+									}]
+							}]
+					}, {
+						"pid":	30316,
+						"ppid":	30296,
+						"boot.sec":	32363,
+						"boot.nsec":	309770300,
+						"cwd":	"",
+						"pipe0":	-1,
+						"pipe1":	-1,
+						"cmdline":	["echo", "fork_dep4:", "abcd"],
+						"environ":	[]
+					}, {
+						"pid":	30317,
+						"ppid":	30296,
+						"boot.sec":	32363,
+						"boot.nsec":	310592300,
+						"cwd":	"",
+						"pipe0":	-1,
+						"pipe1":	-1,
+						"cmdline":	["sh", "/home/qianfan/debug/port/github-os/rptree/example/2.sh"],
+						"environ":	[],
+						"childs":	[{
+								"pid":	30318,
+								"ppid":	30317,
+								"boot.sec":	32363,
+								"boot.nsec":	311742500,
+								"cwd":	"",
+								"pipe0":	-1,
+								"pipe1":	-1,
+								"cmdline":	["echo", "script running in /home/qianfan/debug/port/github-os/rptree/example/2.sh, global env is: \"env1\""],
+								"environ":	[]
+							}]
+					}]
+			}]
+	}]

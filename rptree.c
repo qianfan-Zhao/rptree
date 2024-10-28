@@ -757,28 +757,28 @@ static int process_smart_fork(struct process *grandpa)
 	list_for_each_entry_safe(father, next, &grandpa->childs, head, struct process) {
 		struct process *child;
 
-		if (process_count_childs(father) != 1)
-			goto skip;
-
-		if (father->cmdline_len != grandpa->cmdline_len ||
-		    memcmp(father->cmdline, grandpa->cmdline, father->cmdline_len))
-			goto skip;
-
-		child = list_first_entry(&father->childs, struct process, head);
-		if (!child)
-			goto skip;
-
-		list_del(&child->head);
-		list_init(&child->head);
-		process_replace_father(father, child);
-		free(child);
-
-	skip:
+		/* smart fork child first */
 		if (!list_empty(&father->childs)) {
 			ret = process_smart_fork(father);
 			if (ret < 0)
 				break;
 		}
+
+		if (process_count_childs(father) != 1)
+			continue;
+
+		if (father->cmdline_len != grandpa->cmdline_len ||
+		    memcmp(father->cmdline, grandpa->cmdline, father->cmdline_len))
+			continue;
+
+		child = list_first_entry(&father->childs, struct process, head);
+		if (!child)
+			continue;
+
+		list_del(&child->head);
+		list_init(&child->head);
+		process_replace_father(father, child);
+		free(child);
 	}
 
 	return ret;
