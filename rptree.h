@@ -45,6 +45,7 @@ struct show_rptree_option {
 	bool			show_env;
 	bool			show_pipefd;
 	bool			show_cwd;
+	bool			show_ts;
 };
 
 void show_rptree(struct show_rptree_option *opt);

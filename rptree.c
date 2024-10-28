@@ -217,7 +217,9 @@ static void show_process(FILE *fp, struct process *p, int level,
 		show_process_cwd(fp, p, level);
 
 	show_process_level(fp, level, "|.... ");
-	show_process_timestamp(fp, p);
+
+	if (opt->show_ts)
+		show_process_timestamp(fp, p);
 
 	fprintf(fp, "[%d]", p->pid);
 	foreach_string(s, p->cmdline, p->cmdline_len) {
@@ -807,6 +809,7 @@ enum {
 	ARG_SHOW_ENV = 1,
 	ARG_SHOW_PIPEFD,
 	ARG_SHOW_CWD,
+	ARG_SHOW_TS,
 	ARG_VERSION,
 	ARG_SMART_PIPE,
 	ARG_WARNNING_BAD_PIPE,
@@ -822,6 +825,7 @@ static struct option long_options[] = {
 	{ "write",	required_argument,	NULL,	ARG_WRITE	},
 	{ "env",	no_argument,		NULL,	ARG_SHOW_ENV 	},
 	{ "pipefd",	no_argument,		NULL,	ARG_SHOW_PIPEFD	},
+	{ "ts",		no_argument,		NULL,	ARG_SHOW_TS	},
 	{ "cwd",	no_argument,		NULL,	ARG_SHOW_CWD	},
 	{ "smart-pipe",	no_argument,		NULL,	ARG_SMART_PIPE	},
 	{ "Wbad-pipe",	no_argument,		NULL,	ARG_WARNNING_BAD_PIPE},
@@ -837,6 +841,7 @@ static void print_usage(void)
 	fprintf(stderr, "Usage: [OPTIONS] -- child [CHILD_ARGS]\n");
 	fprintf(stderr, "     --env:               show environ\n");
 	fprintf(stderr, "     --pipefd:            show pipe fd\n");
+	fprintf(stderr, "     --ts:                show timestamp\n");
 	fprintf(stderr, "     --cwd:               show cwd\n");
 	fprintf(stderr, "     --version:           show version\n");
 	fprintf(stderr, "  -w --write file:        write process's information to file\n");
@@ -917,6 +922,9 @@ int main(int argc, char **argv)
 			break;
 		case ARG_SHOW_PIPEFD:
 			opt.show_pipefd = true;
+			break;
+		case ARG_SHOW_TS:
+			opt.show_ts = true;
 			break;
 		case ARG_SHOW_CWD:
 			opt.show_cwd = true;

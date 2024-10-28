@@ -38,6 +38,10 @@ static const struct xopt_option cmd_rptree_options[] = {
 		.long_name	= "cwd",
 		.type		= XOPT_TYPE_BOOL,
 		.offset		= offsetof(struct show_rptree_option, show_cwd),
+	}, {
+		.long_name	= "ts",
+		.type		= XOPT_TYPE_BOOL,
+		.offset		= offsetof(struct show_rptree_option, show_ts),
 	},
 	LIBXOPT_NULLOPTION,
 };
