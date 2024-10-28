@@ -266,7 +266,7 @@ void show_rptree(struct show_rptree_option *opt)
 	return show_process_tree(stdout, root_process, 0, opt);
 }
 
-static cJSON *process_to_json_object(struct process *root)
+static cJSON *process_to_json_object(struct process *root, bool protect_privacy)
 {
 	cJSON *json = cJSON_CreateObject();
 	cJSON *cmd, *env;
@@ -279,7 +279,7 @@ static cJSON *process_to_json_object(struct process *root)
 	cJSON_AddNumberToObject(json, "ppid", root->ppid);
 	cJSON_AddNumberToObject(json, "boot.sec", root->boottime.tv_sec);
 	cJSON_AddNumberToObject(json, "boot.nsec", root->boottime.tv_nsec);
-	cJSON_AddStringToObject(json, "cwd", root->cwd);
+	cJSON_AddStringToObject(json, "cwd", protect_privacy ? "" : root->cwd );
 
 	cJSON_AddNumberToObject(json, "pipe0", root->pipe_fd0);
 	cJSON_AddNumberToObject(json, "pipe1", root->pipe_fd1);
@@ -289,8 +289,10 @@ static cJSON *process_to_json_object(struct process *root)
 		cJSON_AddItemToArray(cmd, cJSON_CreateString(s));
 
 	env = cJSON_AddArrayToObject(json, "environ");
-	foreach_string(s, root->environ, root->environ_len)
-		cJSON_AddItemToArray(env, cJSON_CreateString(s));
+	if (!protect_privacy) {
+		foreach_string(s, root->environ, root->environ_len)
+			cJSON_AddItemToArray(env, cJSON_CreateString(s));
+	}
 
 	return json;
 }
@@ -382,17 +384,18 @@ static struct process *process_from_json(cJSON *json, struct process *parent)
 	return p;
 }
 
-static int process_tree_addto_json(cJSON *json_arrays, struct process *root)
+static int process_tree_addto_json(cJSON *json_arrays, struct process *root,
+				   bool protect_privacy)
 {
 	cJSON *json;
 
-	json = process_to_json_object(root);
+	json = process_to_json_object(root, protect_privacy);
 	if (!list_empty(&root->childs)) {
 		cJSON *childs = cJSON_AddArrayToObject(json, "childs");
 		struct process *p;
 
 		list_for_each_entry(p, &root->childs, head, struct process)
-			process_tree_addto_json(childs, p);
+			process_tree_addto_json(childs, p, protect_privacy);
 	}
 
 	cJSON_AddItemToArray(json_arrays, json);
@@ -483,12 +486,13 @@ static void add_process(pid_t pid)
 
 static cJSON *rptree_to_json(void)
 {
+	char *privacy = getenv("RPTREE_PROTECT_PROVACY");
 	cJSON *arrays = cJSON_CreateArray();
 
 	if (!arrays)
 		return arrays;
 
-	process_tree_addto_json(arrays, root_process);
+	process_tree_addto_json(arrays, root_process, privacy != NULL);
 	return arrays;
 }
 
