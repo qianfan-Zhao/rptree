@@ -43,4 +43,6 @@ echo "script running in $0"
 echo "timestamp: " "$(get_timestamp)"
 echo "timestamp with zone: " "$(get_timestamp_zone)"
 echo "fork_dep4:" "$(fork_dep4 abcd)"
-sh ${self_path}/2.sh
+
+NEXT_SCRIPT=2.sh
+bash -c ${self_path}/${NEXT_SCRIPT}

@@ -30,6 +30,11 @@ struct process {
 	struct process		*parent;
 
 	struct process		*pipe_next;
+
+	/* the main program running some code and then execl */
+	struct process		*next_exec;
+
+	uint8_t			runtime_data[0];
 };
 
 struct process *get_root_process(void);

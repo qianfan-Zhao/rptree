@@ -20,6 +20,23 @@
 #include "rptree.h"
 #include "cJSON.h"
 
+enum process_where_t {
+	PROCESS_FROM_MONITOR,
+	PROCESS_FROM_CHILD,
+};
+
+struct process_runtime {
+	enum process_where_t	where;
+};
+
+static inline struct process_runtime *
+	process_get_runtime_data(struct process *p)
+{
+	void *data = &p->runtime_data;
+
+	return data;
+}
+
 static int option_smart_pipe = 0, option_smart_fork = 0;
 static int option_error_bad_pipe = 0;
 
@@ -31,9 +48,9 @@ struct process *get_root_process(void)
 	return root_process;
 }
 
-static struct process *alloc_process(void)
+static struct process *alloc_process(size_t data_size)
 {
-	struct process *p = calloc(1, sizeof(*p));
+	struct process *p = calloc(1, sizeof(*p) + data_size);
 
 	if (p) {
 		clock_gettime(CLOCK_MONOTONIC_RAW, &p->boottime);
@@ -65,6 +82,23 @@ static struct process *process_find_in(struct process *root, pid_t pid)
 struct process *process_find(pid_t pid)
 {
 	return process_find_in(root_process, pid);
+}
+
+static struct process *process_find_last_exec(pid_t pid)
+{
+	struct process *p = process_find(pid);
+
+	if (!p)
+		return p;
+
+	if (!p->next_exec)
+		return p;
+
+	/* return the last one */
+	while (p->next_exec)
+		p = p->next_exec;
+
+	return p;
 }
 
 const char *next_string(const char *buf, size_t bufsz, const char *s)
@@ -356,7 +390,7 @@ static char *cJSON_StringArrayPrint(cJSON *arrays, size_t *total_length)
 
 static struct process *process_from_json(cJSON *json, struct process *parent)
 {
-	struct process *p = alloc_process();
+	struct process *p = alloc_process(0);
 
 	if (!p)
 		return p;
@@ -412,7 +446,7 @@ static void orphan_find_parent(void)
 
 		list_for_each_entry_safe(orphan, next, &orphan_lists,
 					head, struct process) {
-			parent = process_find(orphan->ppid);
+			parent = process_find_last_exec(orphan->ppid);
 			if (parent) {
 				/* it's parent ready, move it */
 				list_del(&orphan->head);
@@ -437,8 +471,10 @@ static void warning_orphan(void)
 	}
 }
 
-static void add_process(pid_t pid)
+static void add_process(pid_t pid, enum process_where_t where)
 {
+	struct process *prev_exec = NULL;
+	struct process_runtime *r = NULL;
 	struct process *parent, *self;
 	pid_t ppid;
 
@@ -454,19 +490,50 @@ static void add_process(pid_t pid)
 	 * ppid 10760 -> pid 10761, readlink
 	 * ppid 10759 -> pid 10760, dirname
 	 */
+	self = process_find_last_exec(pid);
+	if (self) {
+		r = process_get_runtime_data(self);
+
+		/* Update it's cmdline and env.
+		 * |.... [1984] bash -c /home/qianfan/debug/port/github-os/rptree/example/2.sh
+		 * |.... [1984] /bin/bash /home/qianfan/debug/port/github-os/rptree/example/2.sh
+		 */
+		if (r->where == PROCESS_FROM_CHILD) {
+			free(self->cmdline);
+			free(self->environ);
+
+			self->cmdline = procfs_alloc(pid, "cmdline", &self->cmdline_len);
+			self->environ = procfs_alloc(pid, "environ", &self->environ_len);
+			return;
+		}
+
+		/* this progress switched by 'execl', create a new process
+		 * and link it.
+		 */
+		prev_exec = self;
+	}
+
 	for (int try = 0; try < 2; try++) {
-		parent = process_find(ppid);
+		parent = process_find_last_exec(ppid);
 		if (parent)
 			break;
 
 		switch (try) {
 		case 0:
-			add_process(ppid);
+			add_process(ppid, PROCESS_FROM_CHILD);
 			break;
 		}
 	}
 
-	self = alloc_process();
+	self = alloc_process(sizeof(struct process_runtime));
+	if (!self)
+		return;
+
+	if (prev_exec)
+		prev_exec->next_exec = self;
+
+	r = process_get_runtime_data(self);
+	r->where = where;
 	self->pid = pid;
 	self->ppid = ppid;
 	self->parent = parent; /* parent maybe NULL */
@@ -965,7 +1032,7 @@ int main(int argc, char **argv)
 		return -1;
 	}
 
-	root_process = alloc_process();
+	root_process = alloc_process(sizeof(struct process_runtime));
 	if (!root_process)
 		return -1;
 
@@ -1008,7 +1075,7 @@ int main(int argc, char **argv)
 			switch (wstatus >> 8) {
 			case SIGTRAP | (PTRACE_EVENT_EXEC << 8):
 				sig = 0;
-				add_process(pid);
+				add_process(pid, PROCESS_FROM_MONITOR);
 				break;
 			case SIGTRAP | (PTRACE_EVENT_FORK << 8):
 			case SIGTRAP | (PTRACE_EVENT_CLONE << 8):
