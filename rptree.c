@@ -936,7 +936,9 @@ static int propagate_signal(int wstatus)
 		case_stopsig(SIGQUIT);
 		case_stopsig(SIGHUP);
 		case_stopsig(SIGPIPE);
-		case_stopsig(SIGCHLD);
+		case SIGCHLD:
+			sig = SIGCONT;
+			break;
 		default:
 			if (WSTOPSIG(wstatus) != SIGTRAP)
 				sig = WSTOPSIG(wstatus);
